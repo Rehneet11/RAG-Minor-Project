@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Wisebot</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+		<script>
+			tailwind.config = {
+				darkMode: 'class',
+				theme: {
+					extend: {
+						colors: {
+							accent: '#22d3ee',
+							bot1: '#6366f1',
+							bot2: '#8b5cf6',
+							user1: '#06b6d4',
+							user2: '#22d3ee'
+						}
+					}
+				}
+			}
+		</script>
+		<link rel="preconnect" href="https://fonts.googleapis.com">
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+		<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+		<style>
+		/* TTS highlight style */
+		.tts-highlight {
+			background-color: rgba(250,204,21,0.28); /* warm yellow */
+			border-radius: 0.25rem;
+			transition: background-color 120ms ease;
+			padding: 0 0.08rem;
+		}
+		/* Simple equalizer animation for the speaking icon */
+		@keyframes tts-bar {
+			0% { transform: scaleY(0.4); }
+			50% { transform: scaleY(1); }
+			100% { transform: scaleY(0.4); }
+		}
+		.tts-eq { display:inline-flex; gap:3px; align-items:end; height:12px; }
+		.tts-eq span { display:inline-block; width:3px; background:currentColor; border-radius:2px; transform-origin:bottom center; animation: tts-bar 700ms infinite ease-in-out; }
+		.tts-eq span:nth-child(1) { animation-delay: 0ms; height:6px; }
+		.tts-eq span:nth-child(2) { animation-delay: 120ms; height:9px; }
+		.tts-eq span:nth-child(3) { animation-delay: 240ms; height:5px; }
+		</style>
+		<!-- Favicon using the agentic doctor logo -->
+		<link rel="icon" type="image/svg+xml" href="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/1f9d1-200d-2695-fe0f.svg">
+		<link rel="shortcut icon" href="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/1f9d1-200d-2695-fe0f.svg">
+		<!-- Markdown rendering and sanitization -->
+		<script src="https://cdn.jsdelivr.net/npm/markdown-it@13.0.1/dist/markdown-it.min.js"></script>
+		<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+	</head>
+	<body class="min-h-screen [font-family:Inter,system-ui,-apple-system,Segoe_UI,Roboto,Helvetica,Arial]">
+		<div id="root"></div>
+
+		<!-- React (UMD) and Babel for in-browser JSX transpilation -->
+		<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+		<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+		<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+		{% raw %}
+		<script type="text/babel" data-presets="env,react">
+			const { useEffect, useMemo, useRef, useState } = React;
+
+			function generateId() {
+				if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+					return window.crypto.randomUUID();
+				}
+				return 'id-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+			}
+
+			function classNames(...classes) {
+				return classes.filter(Boolean).join(' ');
+			}
+
+			// TTS: pick a more masculine/professional voice when available
+			// Heuristics: prefer voices that explicitly contain 'Male' or a known male voice name,
+			// otherwise prefer an English voice as a sensible fallback.
+			let preferredTTSVoice = null;
+			function loadPreferredVoice() {
+				try {
+					const synth = window.speechSynthesis;
+					if (!synth) return;
+					function chooseVoice() {
+						const voices = synth.getVoices() || [];
+						if (!voices.length) return;
+						// Try to find a voice that signals male explicitly
+						preferredTTSVoice = voices.find(v => /male/i.test(v.name || '') || /male/i.test(v.voiceURI || '')) || null;
+						// List of common male-sounding voice names on various platforms
+						const maleNames = ['Alex','Daniel','Thomas','Fred','Tom','James','John','Ryan','Paul','David','Victor','Daniel (Enhanced)','David (Enhanced)'];
+						if (!preferredTTSVoice) {
+							for (const n of maleNames) {
+								const v = voices.find(x => x.name && x.name.toLowerCase().includes(n.toLowerCase()));
+								if (v) { preferredTTSVoice = v; break; }
+							}
+						}
+						// Fallback: prefer an English voice
+						if (!preferredTTSVoice) {
+							preferredTTSVoice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en')) || voices[0] || null;
+						}
+					}
+					chooseVoice();
+					// ensure we re-run selection when voices list changes
+					synth.onvoiceschanged = chooseVoice;
+				} catch (e) {
+					// ignore
+				}
+			}
+			// Try to load voices early
+			loadPreferredVoice();
+
+			// Avatars
+			// Cute, professional health worker (agentic doctor) from Twemoji
+			const BOT_AVATAR = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/1f9d1-200d-2695-fe0f.svg';
+			const USER_AVATAR = 'https://i.ibb.co/d5b84Xw/Untitled-design.png';
+
+			function Avatar({ src, alt }) {
+				return (
+					<img src={src} alt={alt} className="h-8 w-8 md:h-10 md:w-10 rounded-full border border-white/80 shadow-lg" />
+				);
+			}
+
+			function Header({ theme, onToggleTheme }) {
+				return (
+					<header className="max-w-[1200px] mx-auto mt-6 bg-white/10 backdrop-blur-md rounded-xl border border-white/10 shadow-2xl px-4 py-3">
+						<div className="flex items-center justify-between gap-3">
+							<div className="flex items-center gap-3">
+								<Avatar src={BOT_AVATAR} alt="Wisebot" />
+								<div>
+									<h1 className="m-0 text-lg font-bold">Wisebot</h1>
+									<p className="m-0 text-xs text-slate-300/80 font-medium">Your medical RAG assistant</p>
+								</div>
+							</div>
+							<button onClick={onToggleTheme} className="inline-flex items-center gap-2 text-xs md:text-sm px-3 py-2 rounded-lg border bg-white/40 dark:bg-white/20 border-slate-300/60 dark:border-white/20 text-slate-900 dark:text-slate-100 hover:brightness-110 active:translate-y-px" aria-label="Toggle theme">
+								{theme === 'dark' ? (
+									<>
+										<svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6.76 4.84l-1.8-1.79L3.17 4.84 4.96 6.63l1.8-1.79zM1 13h3v-2H1v2zm10 10h2v-3h-2v3zM4.22 19.78l1.79-1.8-1.41-1.41-1.8 1.79 1.42 1.42zM20 13h3v-2h-3v2zm-1.76 6.78l1.42-1.42-1.8-1.79-1.41 1.41 1.79 1.8zM13 1h-2v3h2V1zm6.83 3.84l-1.79-1.79-1.41 1.41 1.79 1.8 1.41-1.42zM12 6a6 6 0 100 12A6 6 0 0012 6z"/></svg>
+										<span>Light</span>
+									</>
+								) : (
+									<>
+										<svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M21.64 13a9 9 0 01-11.31-11.31A10 10 0 1021.64 13z"/></svg>
+										<span>Dark</span>
+									</>
+								)}
+							</button>
+						</div>
+					</header>
+				);
+			}
+
+			function Sidebar({ theme, developers, onToggleTheme }) {
+				return (
+					<aside className={classNames('rounded-2xl border shadow-2xl h-auto md:h-full w-full md:w-auto mx-0 overflow-hidden', theme === 'dark' ? 'bg-white/10 border-white/10' : 'bg-white/80 border-slate-200')}>
+						<div className="px-3 py-2 sm:px-4 sm:py-4 md:border-b md:border-white/10 flex items-center justify-between gap-3">
+							<div className="flex items-center gap-2">
+								<Avatar src={BOT_AVATAR} alt="Wisebot" />
+								<div>
+									<h1 className={classNames('m-0 text-base font-bold', theme === 'dark' ? 'text-slate-100' : 'text-slate-800')}>Wisebot</h1>
+									<p className={classNames('m-0 text-[11px] font-medium', theme === 'dark' ? 'text-slate-300/80' : 'text-slate-600')}>Your medical RAG assistant</p>
+								</div>
+							</div>
+							<button onClick={onToggleTheme} className="inline-flex items-center gap-2 text-[11px] px-2.5 py-1.5 rounded-lg border bg-white/40 dark:bg-white/20 border-slate-300/60 dark:border-white/20 text-slate-900 dark:text-slate-100 hover:brightness-110 active:translate-y-px" aria-label="Toggle theme">
+								{theme === 'dark' ? (
+									<>
+										<svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M6.76 4.84l-1.8-1.79L3.17 4.84 4.96 6.63l1.8-1.79zM1 13h3v-2H1v2zm10 10h2v-3h-2v3zM4.22 19.78l1.79-1.8-1.41-1.41-1.8 1.79 1.42 1.42zM20 13h3v-2h-3v2zm-1.76 6.78l1.42-1.42-1.8-1.79-1.41 1.41 1.79 1.8zM13 1h-2v3h2V1zm6.83 3.84l-1.79-1.79-1.41 1.41 1.79 1.8 1.41-1.42zM12 6a6 6 0 100 12A6 6 0 0012 6z"/></svg>
+										<span>Light</span>
+									</>
+								) : (
+									<>
+										<svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M21.64 13a9 9 0 01-11.31-11.31A10 10 0 1021.64 13z"/></svg>
+										<span>Dark</span>
+									</>
+								)}
+							</button>
+						</div>
+						<div className="hidden md:block">
+							<div className="px-4 pt-3 pb-2">
+								<h2 className={classNames('text-xs font-semibold m-0 uppercase tracking-wider', theme === 'dark' ? 'text-slate-200' : 'text-slate-700')}>Developers</h2>
+							</div>
+							<ul className="p-2">
+								{developers.map((name, idx) => (
+									<li key={idx} className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/10">
+										<div className="h-8 w-8 rounded-full bg-gradient-to-br from-bot1 to-bot2 text-white text-xs font-semibold flex items-center justify-center">
+											{(name || '').split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase() || 'D'}
+										</div>
+										<span className={classNames('text-sm', theme === 'dark' ? 'text-slate-100' : 'text-slate-800')}>{name || '—'}</span>
+									</li>
+								))}
+							</ul>
+						</div>
+					</aside>
+				);
+			}
+
+			function MessageBubble({ role, content, timestamp, theme, prevRole }) {
+				const isUser = role === 'user';
+				// Render markdown for assistant messages, keep user messages as plain text
+				const html = isUser
+					? DOMPurify.sanitize(content)
+					: DOMPurify.sanitize(window.markdownit({ breaks: true, linkify: true }).render(content || ''));
+				const [isSpeaking, setIsSpeaking] = React.useState(false);
+				const [copied, setCopied] = React.useState(false);
+				const contentRef = React.useRef(null);
+				// Helpers to highlight the currently spoken text range inside the message
+				function clearTTSHighlights() {
+					try {
+						if (!contentRef.current) return;
+						// remove any wrapped highlight spans
+						const spans = Array.from(contentRef.current.querySelectorAll('.tts-highlight'));
+						for (const s of spans) {
+							const parent = s.parentNode;
+							while (s.firstChild) parent.insertBefore(s.firstChild, s);
+							parent.removeChild(s);
+						}
+						// also remove highlight class if applied to container
+						contentRef.current.classList.remove('tts-highlight');
+					} catch (e) {}
+				}
+
+				function highlightRange(start, length) {
+					try {
+						if (!contentRef.current) return;
+						clearTTSHighlights();
+						if (!length || length <= 0) {
+							// fallback: highlight the whole container
+							contentRef.current.classList.add('tts-highlight');
+							return;
+						}
+						const walker = document.createTreeWalker(contentRef.current, NodeFilter.SHOW_TEXT, null);
+						let node = walker.nextNode();
+						let index = 0;
+						let startNode = null, startOffset = 0, endNode = null, endOffset = 0;
+						const endIndex = start + length;
+						while (node) {
+							const nodeLen = node.nodeValue.length;
+							if (startNode === null && index + nodeLen > start) {
+								startNode = node;
+								startOffset = start - index;
+							}
+							if (index + nodeLen >= endIndex) {
+								endNode = node;
+								endOffset = endIndex - index;
+								break;
+							}
+							index += nodeLen;
+							node = walker.nextNode();
+						}
+						if (startNode && endNode) {
+							const range = document.createRange();
+							range.setStart(startNode, startOffset);
+							range.setEnd(endNode, endOffset);
+							const wrap = document.createElement('span');
+							wrap.className = 'tts-highlight';
+							range.surroundContents(wrap);
+						}
+					} catch (e) {}
+				}
+				function copyText() {
+					try {
+						let textToCopy = content || '';
+						if (!isUser) {
+							const tmp = document.createElement('div');
+							tmp.innerHTML = html;
+							textToCopy = (tmp.textContent || tmp.innerText || '').trim();
+						}
+						navigator.clipboard.writeText(textToCopy);
+						setCopied(true);
+						setTimeout(() => setCopied(false), 1200);
+					} catch (e) {}
+				}
+				const proseLink = theme === 'dark' ? 'prose-a:text-indigo-200 hover:prose-a:text-indigo-100' : 'prose-a:text-indigo-600 hover:prose-a:text-indigo-700';
+				const proseCode = theme === 'dark' ? 'prose-code:bg-black/20' : 'prose-code:bg-black/5';
+				const prosePre = theme === 'dark' ? 'prose-pre:bg-black/30' : 'prose-pre:bg-slate-100';
+				const isSpeakerChanged = prevRole && prevRole !== role;
+				const verticalMargin = isSpeakerChanged ? 'my-6' : 'my-3';
+
+				return (
+					<>
+						<div className={classNames('flex items-end gap-3', verticalMargin, isUser ? 'justify-end' : 'justify-start')}>
+							{!isUser && (
+								<div className="flex-none">
+									<Avatar src={BOT_AVATAR} alt="Bot" />
+								</div>
+							)}
+							<div className={classNames(
+								'group max-w-[80%] md:max-w-[70%] rounded-2xl px-4 py-3 relative text-[0.95rem] leading-relaxed shadow-xl border border-white/10',
+								isUser ? 'bg-gradient-to-br from-user1 to-user2 text-slate-900' : 'bg-gradient-to-br from-bot1 to-bot2 text-slate-900'
+							)}>
+								<div ref={contentRef} className={classNames(
+									'prose dark:prose-invert prose-p:m-0',
+									'[&>p+ul]:mt-2 [&>p+ol]:mt-2 [&>ul]:list-disc [&>ol]:list-decimal [&>ul]:pl-5 [&>ol]:pl-5',
+									proseLink,
+									proseCode, 'prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:text-[0.85em]',
+									prosePre, 'prose-pre:border prose-pre:border-white/10 prose-pre:rounded-xl'
+								)} dangerouslySetInnerHTML={{ __html: html }} />
+								<time className={classNames('absolute -bottom-4 text-[10px] text-slate-300/70', isUser ? 'right-2' : 'left-2')}>{timestamp}</time>
+								{!isUser && (
+									<div className="absolute -bottom-8 right-2 flex items-center gap-2">
+										<div className="relative group/speak">
+											<button
+												onClick={() => {
+												try {
+													const synth = window.speechSynthesis;
+													if (!synth) return;
+													if (synth.speaking) { synth.cancel(); setIsSpeaking(false); clearTTSHighlights(); return; }
+													let textToSpeak = '';
+													const tmp = document.createElement('div');
+													tmp.innerHTML = html;
+													textToSpeak = (tmp.textContent || tmp.innerText || '').trim();
+													if (!textToSpeak) return;
+													const u = new SpeechSynthesisUtterance(textToSpeak);
+													// Use selected preferred voice when available and tune pitch/rate for a
+													// deeper, more professional tone. Fall back to en-US when no voice.
+													if (preferredTTSVoice) {
+														u.voice = preferredTTSVoice;
+														if (preferredTTSVoice.lang) u.lang = preferredTTSVoice.lang;
+													} else {
+														u.lang = 'en-US';
+													}
+													// Slightly slower rate and lower pitch for a more 'manly' and professional sound
+													u.rate = 0.95;
+													u.pitch = 0.9;
+													u.volume = 1;
+													u.onboundary = (ev) => {
+														try {
+															if (ev && typeof ev.charIndex === 'number') {
+																highlightRange(ev.charIndex, ev.charLength || 0);
+															}
+														} catch (e) {}
+													};
+													u.onend = () => { setIsSpeaking(false); clearTTSHighlights(); };
+													u.onerror = () => { setIsSpeaking(false); clearTTSHighlights(); };
+													setIsSpeaking(true);
+													synth.speak(u);
+												} catch (e) {} }}
+												className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-white/20 bg-white/25 text-slate-900 hover:brightness-110 active:translate-y-px"
+												aria-label="Read aloud"
+												title="Read aloud"
+											>
+												{isSpeaking ? (
+													<div className="flex items-center gap-2">
+														<svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="currentColor"><path d="M3 10v4h4l5 5V5L7 10H3z"/></svg>
+														<span className="tts-eq text-slate-900 dark:text-white">
+															<span></span><span></span><span></span>
+														</span>
+													</div>
+												) : (
+													<svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M3 10v4h4l5 5V5L7 10H3z"/><path d="M16.5 7.5a1 1 0 10-1.4-1.4 5.5 5.5 0 010 7.8 1 1 0 101.4-1.4 3.5 3.5 0 000-4.99z"/></svg>
+												)}
+											</button>
+											<span className="pointer-events-none absolute top-full mt-1 left-1/2 -translate-x-1/2 opacity-0 group-hover/speak:opacity-100 transition-opacity text-[10px] px-2 py-1 rounded bg-black/70 text-white whitespace-nowrap">{isSpeaking ? 'Stop' : 'Read aloud'}</span>
+										</div>
+										<div className="relative group/copy">
+											<button onClick={copyText} className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-white/20 bg-white/25 text-slate-900 hover:brightness-110 active:translate-y-px" aria-label="Copy message" title="Copy message">
+												<svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v12h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+											</button>
+											<span className="pointer-events-none absolute top-full mt-1 left-1/2 -translate-x-1/2 opacity-0 group-hover/copy:opacity-100 transition-opacity text-[10px] px-2 py-1 rounded bg-black/70 text-white whitespace-nowrap">{copied ? 'Copied' : 'Copy message'}</span>
+										</div>
+									</div>
+								)}
+							</div>
+							{isUser && (
+								<div className="flex-none">
+									<Avatar src={USER_AVATAR} alt="You" />
+								</div>
+							)}
+						</div>
+					</>
+				);
+			}
+
+			function TypingIndicator() {
+				return (
+					<div className="flex items-center gap-2">
+						<svg className="h-4 w-4 text-white/90 animate-spin" viewBox="0 0 24 24" fill="none">
+							<circle className="opacity-30" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+							<path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+						</svg>
+						<span className="text-xs font-medium tracking-wide">Thinking…</span>
+					</div>
+				);
+			}
+
+			function ChatInput({ onSend, disabled, theme }) {
+				const [value, setValue] = useState('');
+				const inputRef = useRef(null);
+				const recognitionRef = useRef(null);
+				const [isRecording, setIsRecording] = useState(false);
+				const [supportsVoice, setSupportsVoice] = useState(false);
+
+				function submit(e) {
+					e.preventDefault();
+					const trimmed = value.trim();
+					if (!trimmed || disabled) return;
+					onSend(trimmed);
+					setValue('');
+				}
+
+				useEffect(() => {
+					if (inputRef.current) {
+						inputRef.current.focus();
+					}
+				}, [disabled]);
+
+				useEffect(() => {
+					const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+					if (SR) {
+						setSupportsVoice(true);
+						const r = new SR();
+						r.lang = 'en-US';
+						r.interimResults = true;
+						r.continuous = false;
+						r.onresult = (event) => {
+							let finalTranscript = '';
+							for (let i = event.resultIndex; i < event.results.length; ++i) {
+								const transcript = event.results[i][0].transcript;
+								if (event.results[i].isFinal) {
+									finalTranscript += transcript;
+								} else {
+									// show interim in the input field
+									setValue((prev) => prev ? prev : transcript);
+								}
+							}
+							if (finalTranscript) {
+								setValue((prev) => (prev ? (prev + ' ' + finalTranscript).trim() : finalTranscript.trim()));
+							}
+						};
+						r.onstart = () => setIsRecording(true);
+						r.onend = () => setIsRecording(false);
+						r.onerror = () => setIsRecording(false);
+						recognitionRef.current = r;
+					}
+				}, []);
+
+				function toggleRecording() {
+					if (!supportsVoice || !recognitionRef.current) return;
+					if (isRecording) {
+						try { recognitionRef.current.stop(); } catch (e) {}
+					} else {
+						try {
+							// clear placeholder interim state only if empty
+							if (!value) setValue('');
+							recognitionRef.current.start();
+						} catch (e) {}
+					}
+				}
+
+				const isDark = theme === 'dark';
+				return (
+					<form className={classNames('grid grid-cols-[1fr_auto_auto] gap-3 p-3 rounded-b-2xl border-t', isDark ? 'border-white/10 bg-white/5' : 'border-slate-200 bg-white/60')} onSubmit={submit}>
+						<input
+							ref={inputRef}
+							className={classNames(
+								'h-12 px-3 rounded-xl outline-none focus:ring-4 focus:ring-indigo-500/25',
+								isDark
+									? 'text-slate-100 bg-white/10 border border-white/20 placeholder-slate-300/70 focus:border-white/40'
+									: 'text-slate-900 bg-white border border-slate-300 placeholder-slate-500 focus:border-slate-500'
+							)}
+							type="text"
+							placeholder="Ask about symptoms, medication, or conditions..."
+							value={value}
+							onChange={(e) => setValue(e.target.value)}
+							aria-label="Message input"
+						/>
+						{supportsVoice && (
+							<button
+								type="button"
+								onClick={toggleRecording}
+								className={classNames(
+									'h-12 w-12 rounded-xl border bg-white/20 shadow-lg hover:brightness-110 active:translate-y-px disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center',
+									isDark ? 'border-white/20 text-white' : 'border-slate-300 text-slate-900',
+									isRecording ? 'ring-2 ring-red-400/50' : ''
+								)}
+								aria-label={isRecording ? 'Stop recording' : 'Start recording'}
+								title={isRecording ? 'Stop recording' : 'Start recording'}
+							>
+								{isRecording ? (
+									/* Mic icon when listening */
+									<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+										<path d="M12 14a3 3 0 003-3V7a3 3 0 10-6 0v4a3 3 0 003 3z"/>
+										<path d="M19 11a1 1 0 10-2 0 5 5 0 01-10 0 1 1 0 10-2 0 7 7 0 006 6.92V21a1 1 0 102 0v-3.08A7 7 0 0019 11z"/>
+									</svg>
+								) : (
+									/* Mic-off icon when not listening (strikethrough) */
+									<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+										<path d="M19 11a1 1 0 10-2 0 5 5 0 01-10 0 1 1 0 10-2 0 7 7 0 006 6.92V21a1 1 0 102 0v-3.08A7 7 0 0019 11z"/>
+										<path d="M12 14a3 3 0 003-3V7a3 3 0 10-6 0v.59l6.41 6.41A2.99 2.99 0 0012 14z"/>
+										<path d="M4 4l16 16-1.41 1.41L2.59 5.41 4 4z"/>
+									</svg>
+								)}
+							</button>
+						)}
+						<button className={classNames('h-12 px-4 rounded-xl border bg-gradient-to-br from-bot1 to-bot2 text-white shadow-lg hover:brightness-110 active:translate-y-px disabled:opacity-60 disabled:cursor-not-allowed', isDark ? 'border-white/20' : 'border-slate-300')} type="submit" disabled={disabled || !value.trim()} aria-label="Send message">
+							<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+								<path d="M2 21L23 12L2 3V10L17 12L2 14V21Z" fill="currentColor"/>
+							</svg>
+						</button>
+					</form>
+				);
+			}
+
+			function formatTime(date) {
+				const h = String(date.getHours()).padStart(2, '0');
+				const m = String(date.getMinutes()).padStart(2, '0');
+				return `${h}:${m}`;
+			}
+
+			function App() {
+				const [theme, setTheme] = useState('dark');
+				useEffect(() => {
+					const stored = localStorage.getItem('wisebot-theme');
+					if (stored === 'light' || stored === 'dark') setTheme(stored);
+				}, []);
+				useEffect(() => {
+					localStorage.setItem('wisebot-theme', theme);
+					document.documentElement.classList.toggle('dark', theme === 'dark');
+					// Ensure full-screen themed background is applied to the whole page
+					const darkBody = ['text-slate-200','bg-gradient-to-br','from-slate-900','to-gray-900'];
+					const lightBody = ['text-slate-800','bg-gradient-to-br','from-slate-50','to-slate-200'];
+					[...darkBody, ...lightBody].forEach(c => document.body.classList.remove(c));
+					(theme === 'dark' ? darkBody : lightBody).forEach(c => document.body.classList.add(c));
+				}, [theme]);
+				const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
+				const [messages, setMessages] = useState([]);
+				const [developers, setDevelopers] = useState(['Rehneet Singh', 'Aditya Singh', 'Madhur Dagar', 'Harshika Drall']);
+				const [loading, setLoading] = useState(false);
+				const scrollRef = useRef(null);
+
+				useEffect(() => {
+					if (scrollRef.current) {
+						scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+					}
+				}, [messages, loading]);
+
+				async function sendMessage(text) {
+					const now = new Date();
+					const userMessage = { id: generateId(), role: 'user', content: text, timestamp: formatTime(now) };
+					setMessages((prev) => [...prev, userMessage]);
+					setLoading(true);
+					try {
+						console.log('Sending to /get:', text);
+						const body = new URLSearchParams({ msg: text });
+						const res = await fetch('/get', {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+							body
+						});
+						const data = await res.text();
+						console.log('Response from /get:', data);
+						const botMessage = { id: generateId(), role: 'assistant', content: data, timestamp: formatTime(new Date()) };
+						setMessages((prev) => [...prev, botMessage]);
+					} catch (err) {
+						console.error('Chat error:', err);
+						const errorMessage = { id: generateId(), role: 'assistant', content: 'Sorry, something went wrong. Please try again.', timestamp: formatTime(new Date()) };
+						setMessages((prev) => [...prev, errorMessage]);
+					} finally {
+						setLoading(false);
+					}
+				}
+
+				return (
+					<div className={classNames('max-w-[1200px] min-h-screen mx-auto px-4 py-6 grid grid-rows-[auto_1fr_auto] gap-5', theme === 'dark' ? 'text-slate-200 bg-gradient-to-br from-slate-900 to-gray-900' : 'text-slate-800 bg-gradient-to-br from-slate-50 to-slate-200')}>
+						<div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-5 items-stretch min-h-[78vh]">
+							<Sidebar theme={theme} developers={developers} onToggleTheme={toggleTheme} />
+							<main className={classNames('backdrop-blur-md rounded-2xl border shadow-2xl grid grid-rows-[1fr_auto] min-h-0', theme === 'dark' ? 'bg-white/10 border-white/10' : 'bg-white/80 border-slate-200')}>
+								<div ref={scrollRef} className="p-5 overflow-y-auto min-h-0 h-full">
+								{messages.length === 0 && (
+									<div className={classNames('text-center mt-24', theme === 'dark' ? 'text-slate-200/90' : 'text-slate-700')}>
+										<h2 className="text-2xl font-semibold mb-1">Welcome to Wisebot</h2>
+										<p className={classNames('text-sm', theme === 'dark' ? 'text-slate-300/80' : 'text-slate-600')}>Ask any health-related question. I’ll retrieve trusted context and answer clearly.</p>
+									</div>
+								)}
+								{messages.map((m, idx) => (
+									<MessageBubble key={m.id} role={m.role} content={m.content} timestamp={m.timestamp} theme={theme} prevRole={messages[idx - 1]?.role} />
+								))}
+								{loading && (
+									<div className="flex items-end gap-3 my-3 justify-start">
+										<div className="flex-none">
+											<Avatar src={BOT_AVATAR} alt="Bot" />
+										</div>
+										<div className="max-w-[78%] rounded-2xl px-3 py-2 relative bg-gradient-to-br from-bot1 to-bot2 text-slate-900 border border-white/10 shadow-xl">
+											<TypingIndicator />
+										</div>
+									</div>
+								)}
+								</div>
+								<ChatInput onSend={sendMessage} disabled={loading} theme={theme} />
+							</main>
+						</div>
+						<footer className={classNames('text-center text-xs', theme === 'dark' ? 'text-slate-300/80' : 'text-slate-700')}>For informational purposes only. Not a substitute for professional advice.</footer>
+					</div>
+				);
+			}
+
+			const root = ReactDOM.createRoot(document.getElementById('root'));
+			root.render(<App />);
+		</script>
+		{% endraw %}
+	</body>
+</html>
