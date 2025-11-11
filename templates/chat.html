@@ -272,6 +272,7 @@
 				const proseLink = theme === 'dark' ? 'prose-a:text-indigo-200 hover:prose-a:text-indigo-100' : 'prose-a:text-indigo-600 hover:prose-a:text-indigo-700';
 				const proseCode = theme === 'dark' ? 'prose-code:bg-black/20' : 'prose-code:bg-black/5';
 				const prosePre = theme === 'dark' ? 'prose-pre:bg-black/30' : 'prose-pre:bg-slate-100';
+				const timeColorClass = theme === 'dark' ? 'text-slate-300/70' : 'text-slate-600';
 				const isSpeakerChanged = prevRole && prevRole !== role;
 				const verticalMargin = isSpeakerChanged ? 'my-6' : 'my-3';
 
@@ -284,7 +285,7 @@
 								</div>
 							)}
 							<div className={classNames(
-								'group max-w-[80%] md:max-w-[70%] rounded-2xl px-4 py-3 relative text-[0.95rem] leading-relaxed shadow-xl border border-white/10',
+								'group max-w-[92%] md:max-w-[70%] rounded-2xl px-3 py-2 md:px-4 md:py-3 relative text-[0.95rem] leading-relaxed shadow-xl border border-white/10',
 								isUser ? 'bg-gradient-to-br from-user1 to-user2 text-slate-900' : 'bg-gradient-to-br from-bot1 to-bot2 text-slate-900'
 							)}>
 								<div ref={contentRef} className={classNames(
@@ -294,9 +295,9 @@
 									proseCode, 'prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:text-[0.85em]',
 									prosePre, 'prose-pre:border prose-pre:border-white/10 prose-pre:rounded-xl'
 								)} dangerouslySetInnerHTML={{ __html: html }} />
-								<time className={classNames('absolute -bottom-4 text-[10px] text-slate-300/70', isUser ? 'right-2' : 'left-2')}>{timestamp}</time>
+								<time className={classNames('absolute -bottom-4 text-[10px]', timeColorClass, isUser ? 'right-2' : 'left-2')}>{timestamp}</time>
 								{!isUser && (
-									<div className="absolute -bottom-8 right-2 flex items-center gap-2">
+									<div className="absolute -bottom-10 right-2 sm:right-2 flex items-center gap-2">
 										<div className="relative group/speak">
 											<button
 												onClick={() => {
@@ -448,11 +449,11 @@
 
 				const isDark = theme === 'dark';
 				return (
-					<form className={classNames('grid grid-cols-[1fr_auto_auto] gap-3 p-3 rounded-b-2xl border-t', isDark ? 'border-white/10 bg-white/5' : 'border-slate-200 bg-white/60')} onSubmit={submit}>
+					<form className={classNames('flex items-end gap-3 p-3 rounded-b-2xl border-t', isDark ? 'border-white/10 bg-white/5' : 'border-slate-200 bg-white/60')} onSubmit={submit}>
 						<input
 							ref={inputRef}
 							className={classNames(
-								'h-12 px-3 rounded-xl outline-none focus:ring-4 focus:ring-indigo-500/25',
+								'flex-1 min-w-0 h-12 px-3 rounded-xl outline-none focus:ring-4 focus:ring-indigo-500/25',
 								isDark
 									? 'text-slate-100 bg-white/10 border border-white/20 placeholder-slate-300/70 focus:border-white/40'
 									: 'text-slate-900 bg-white border border-slate-300 placeholder-slate-500 focus:border-slate-500'
@@ -560,7 +561,7 @@
 				}
 
 				return (
-					<div className={classNames('max-w-[1200px] min-h-screen mx-auto px-4 py-6 grid grid-rows-[auto_1fr_auto] gap-5', theme === 'dark' ? 'text-slate-200 bg-gradient-to-br from-slate-900 to-gray-900' : 'text-slate-800 bg-gradient-to-br from-slate-50 to-slate-200')}>
+					<div className={classNames('w-full max-w-[1200px] min-h-screen mx-auto px-3 sm:px-4 py-4 sm:py-6 grid grid-rows-[auto_1fr_auto] gap-5', theme === 'dark' ? 'text-slate-200 bg-gradient-to-br from-slate-900 to-gray-900' : 'text-slate-800 bg-gradient-to-br from-slate-50 to-slate-200')}>
 						<div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-5 items-stretch min-h-[78vh]">
 							<Sidebar theme={theme} developers={developers} onToggleTheme={toggleTheme} />
 							<main className={classNames('backdrop-blur-md rounded-2xl border shadow-2xl grid grid-rows-[1fr_auto] min-h-0', theme === 'dark' ? 'bg-white/10 border-white/10' : 'bg-white/80 border-slate-200')}>
